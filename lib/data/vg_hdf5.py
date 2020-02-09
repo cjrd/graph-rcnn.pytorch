@@ -18,49 +18,64 @@ class vg_hdf5(Dataset):
         assert split == "train" or split == "test", "split must be one of [train, val, test]"
         assert num_im >= -1, "the number of samples must be >= 0"
 
-        # split = 'train' if split == 'test' else 'test'
         self.data_dir = cfg.DATASET.PATH
         self.transforms = transforms
 
         self.split = split
         self.filter_non_overlap = filter_non_overlap
         self.filter_duplicate_rels = filter_duplicate_rels and self.split == 'train'
+        self.NO_EVAL = cfg.TEST.INFERENCE_NO_EVAL
+        
+        if not cfg.TEST.INFERENCE_NO_EVAL:
+            self.roidb_file = os.path.join(self.data_dir, "VG-SGG.h5")
+            self.info = json.load(open(os.path.join(self.data_dir, "VG-SGG-dicts.json"), 'r'))
+            # add background class
+            self.info['label_to_idx']['__background__'] = 0
+            self.class_to_ind = self.info['label_to_idx']
+            self.ind_to_classes = sorted(self.class_to_ind, key=lambda k:
+                                     self.class_to_ind[k])
+            self.predicate_to_ind = self.info['predicate_to_idx']
+            self.predicate_to_ind['__background__'] = 0
+            self.ind_to_predicates = sorted(self.predicate_to_ind, key=lambda k:
+                                  self.predicate_to_ind[k])
+            self.json_category_id_to_contiguous_id = self.class_to_ind
+            self.contiguous_category_id_to_json_id = {
+                v: k for k, v in self.json_category_id_to_contiguous_id.items()
+            }
+        else:
+            # TODO(cjrd) add this to config
+            lpmap = json.load(open("datasets/label-predicate-map.json", "r"))
+            self.predicate_to_ind = lpmap["predicate_to_ind"]
+            self.ind_to_predicates = lpmap["ind_to_predicates"]
+            self.class_to_ind = lpmap["class_to_ind"]
+            self.ind_to_classes = lpmap["ind_to_classes"]
 
-        self.roidb_file = os.path.join(self.data_dir, "VG-SGG.h5")
+            
         self.image_file = os.path.join(self.data_dir, "imdb_1024.h5")
         # read in dataset from a h5 file and a dict (json) file
         assert os.path.exists(self.data_dir), \
-            "cannot find folder {}, please download the visual genome data into this folder".format(self.data_dir)
+            "cannot find data input folder {}".format(self.data_dir)
         self.im_h5 = h5py.File(self.image_file, 'r')
-        self.info = json.load(open(os.path.join(self.data_dir, "VG-SGG-dicts.json"), 'r'))
         self.im_refs = self.im_h5['images'] # image data reference
         im_scale = self.im_refs.shape[2]
 
-        # add background class
-        self.info['label_to_idx']['__background__'] = 0
-        self.class_to_ind = self.info['label_to_idx']
-        self.ind_to_classes = sorted(self.class_to_ind, key=lambda k:
-                               self.class_to_ind[k])
-        # cfg.ind_to_class = self.ind_to_classes
 
-        self.predicate_to_ind = self.info['predicate_to_idx']
-        self.predicate_to_ind['__background__'] = 0
-        self.ind_to_predicates = sorted(self.predicate_to_ind, key=lambda k:
-                                  self.predicate_to_ind[k])
-        # cfg.ind_to_predicate = self.ind_to_predicates
-
-        self.split_mask, self.image_index, self.im_sizes, self.gt_boxes, self.gt_classes, self.relationships = load_graphs(
-            self.roidb_file, self.image_file,
-            self.split, num_im, num_val_im=num_val_im,
-            filter_empty_rels=filter_empty_rels,
-            filter_non_overlap=filter_non_overlap and split == "train",
-        )
-
-        self.json_category_id_to_contiguous_id = self.class_to_ind
-
-        self.contiguous_category_id_to_json_id = {
-            v: k for k, v in self.json_category_id_to_contiguous_id.items()
-        }
+        # if doing inference without evaluation, then we won't need/use this:
+        if not cfg.TEST.INFERENCE_NO_EVAL:
+            self.split_mask, self.image_index, self.im_sizes, self.gt_boxes, self.gt_classes, self.relationships = load_graphs(
+                self.roidb_file, self.image_file,
+                self.split, num_im, num_val_im=num_val_im,
+                filter_empty_rels=filter_empty_rels,
+                filter_non_overlap=filter_non_overlap and split == "train",
+            )
+        else:
+            if num_im < 0:
+                # use all the images
+                num_im = self.im_h5["valid_idx"].shape[0]
+            self.im_sizes = np.array([np.array([w, h]) for w, h in
+                             zip(self.im_h5["image_widths"][:num_im],
+                                 self.im_h5["image_heights"][:num_im])])
+            self.image_index = np.arange(num_im)
 
     @property
     def coco(self):
@@ -98,20 +113,26 @@ class vg_hdf5(Dataset):
         return im
 
     def __len__(self):
-        return len(self.image_index)
+        return len(self.im_sizes)
 
     def __getitem__(self, index):
         """
         get dataset item
         """
         # get image
-        img = Image.fromarray(self._im_getter(index)); width, height = img.size
-
+        img = Image.fromarray(self._im_getter(index))
+        width, height = img.size
+        if self.NO_EVAL:
+            target_raw = BoxList([[0,0,0,0]], (width, height), mode="xyxy")
+            img, target = self.transforms(img, target_raw)
+            return img, target, index
+        
         # get object bounding boxes, labels and relations
         obj_boxes = self.gt_boxes[index].copy()
         obj_labels = self.gt_classes[index].copy()
         obj_relation_triplets = self.relationships[index].copy()
 
+        # TODO(cjrd) can we use this logic for inference?
         if self.filter_duplicate_rels:
             # Filter out dupes!
             assert self.split == 'train'
@@ -220,7 +241,6 @@ def load_graphs(graphs_file, images_file, mode='train', num_im=-1, num_val_im=0,
             image_index = image_index[:num_val_im]
         elif mode == 'train':
             image_index = image_index[num_val_im:]
-
 
     split_mask = np.zeros_like(data_split).astype(bool)
     split_mask[image_index] = True

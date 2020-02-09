@@ -75,7 +75,7 @@ source | backbone | model | bs | lr | mAP@0.5 | sgdet@20 | sgdet@50 | sgdet@100
 <!--this repo | Res-101 | msdn | 8 | 5e-3 | 20k,30k | - | - | - | - -->
 <!--this repo | Res-101 | grcnn | 8 | 5e-3 | 20k,30k | - | - | - | - -->
 
-\* you can click 'this repo' in above table to download the checkpoints. 
+\* you can click 'this repo' in above table to download the checkpoints.
 
 The above table shows that our reimplementation of baseline and imp algorithm match the performance reported in mofitnet.
 
@@ -104,9 +104,9 @@ model | relpn | bs | lr | mAP@0.5 | sgdet@20 | sgdet@50 | sgdet@100
 [msdn](https://drive.google.com/open?id=1xTl_o7D0oozDArjWl1p7g5jiH32jcdBS) | no | 8 | 5e-3 | 24.2 | 18.3 | 23.6 | 27.1
 [msdn](https://drive.google.com/open?id=1ZMnyNotb-t5ty7vqX6IdQd7_S15iFIGg) | yes | 8 | 5e-3 | 24.2 | 19.2 | 23.8 | 26.2
 
-\* you can click 'model' in above table to download the checkpoints. 
+\* you can click 'model' in above table to download the checkpoints.
 
-Above, we can see consistant improvements for different algorithms, which demonstrates the effeciveness of our proposed relation proposal network (RelPN). 
+Above, we can see consistant improvements for different algorithms, which demonstrates the effeciveness of our proposed relation proposal network (RelPN).
 
 **Also, since much less object pairs (256, originally > 1k) are fed to relation head for predicate classification, the inference time for the models with RelPN is reduced significantly (~2.5 times faster)**
 

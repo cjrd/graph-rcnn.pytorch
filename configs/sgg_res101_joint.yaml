@@ -3,9 +3,10 @@ DATASET:
   MODE: "benchmark"
   TRAIN_BATCH_SIZE: 8
   TEST_BATCH_SIZE: 1
+  NUM_TEST_IMAGES: 10
 MODEL:
   WEIGHT_IMG: "catalog://ImageNetPretrained/MSRA/R-101"
-  WEIGHT_DET: ""
+  WEIGHT_DET: "checkpoints/vg_benchmark_object/R-101-C4/sg_baseline_joint_0/BatchSize_2/Base_LR_0.005/checkpoint_0100000.pth"
   RELATION_ON: True
   ALGORITHM: "sg_baseline"
   USE_FREQ_PRIOR: False

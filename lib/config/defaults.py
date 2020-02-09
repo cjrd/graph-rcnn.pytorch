@@ -16,8 +16,6 @@ _C.DATASET.TRAIN_BATCH_SIZE = 4
 _C.DATASET.TEST_BATCH_SIZE = 4
 _C.DATASET.SIZE_DIVISIBILITY = 32
 _C.DATASET.ASPECT_RATIO_GROUPING = True
-_C.DATASET.IND_TO_OBJECT = ""
-_C.DATASET.IND_TO_PREDICATE = ""
 
 """"======================================="""
 _C.INPUT = CN()
@@ -392,3 +390,12 @@ _C.SOLVER.CHECKPOINT_PERIOD = 2500
 _C.SOLVER.IMS_PER_BATCH = 16
 
 _C.PATHS_CATALOG = os.path.join(os.path.dirname(__file__), "paths_catalog.py")
+
+
+
+# COLORADO CONFIG CHANGES
+""""======================================="""
+# set to -1 to indicate using all images
+_C.DATASET.NUM_TEST_IMAGES = -1
+_C.DATASET.NUM_TRAIN_IMAGES = -1
+_C.TEST.INFERENCE_NO_EVAL = False

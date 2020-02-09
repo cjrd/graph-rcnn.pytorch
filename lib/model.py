@@ -5,6 +5,7 @@ import time
 import numpy as np
 import torch
 import cv2
+from datetime import datetime
 from .data.build import build_data_loader
 from .scene_parser.parser import build_scene_parser
 from .scene_parser.parser import build_scene_parser_optimizer
@@ -27,17 +28,21 @@ class SceneGraphGeneration:
         self.arguments = arguments.copy()
         self.device = torch.device("cuda")
 
-        # build data loader
-        self.data_loader_train = build_data_loader(cfg, split="train", is_distributed=distributed)
-        self.data_loader_test = build_data_loader(cfg, split="test", is_distributed=distributed)
-
-        cfg.DATASET.IND_TO_OBJECT = self.data_loader_train.dataset.ind_to_classes
-        cfg.DATASET.IND_TO_PREDICATE = self.data_loader_train.dataset.ind_to_predicates
-
         logger = logging.getLogger("scene_graph_generation.trainer")
-        logger.info("Train data size: {}".format(len(self.data_loader_train.dataset)))
+        if cfg.TEST.INFERENCE_NO_EVAL:
+            logger.info("Performing inference without evaluation.")
+        
+        # build data loader
+        self.data_loader_test = build_data_loader(cfg, split="test", is_distributed=distributed)
+        if not cfg.TEST.INFERENCE_NO_EVAL:
+            self.data_loader_train = build_data_loader(cfg, split="train", is_distributed=distributed)
+
+        if not cfg.TEST.INFERENCE_NO_EVAL:
+            logger.info("Train data size: {}".format(len(self.data_loader_train.dataset)))
         logger.info("Test data size: {}".format(len(self.data_loader_test.dataset)))
 
+
+        # TODO(cjrd) investigate this computation
         if not os.path.exists("freq_prior.npy"):
             logger.info("Computing frequency prior matrix...")
             fg_matrix, bg_matrix = self._get_freq_prior()
@@ -282,26 +287,43 @@ class SceneGraphGeneration:
             if not os.path.exists(output_folder):
                 os.mkdir(output_folder)
             torch.save(predictions, os.path.join(output_folder, "predictions.pth"))
+            test_description = DataDescription(
+                date=datetime.now(),
+                class_to_ind=self.data_loader_test.dataset.class_to_ind,
+                ind_to_classes=self.data_loader_test.dataset.ind_to_classes,
+                ind_to_predicates=self.data_loader_test.dataset.ind_to_predicates,
+                predicate_to_ind=self.data_loader_test.dataset.predicate_to_ind,
+                image_file=self.data_loader_test.dataset.image_file,
+                im_sizes=self.data_loader_test.dataset.im_sizes
+            )
+            torch.save(test_description, os.path.join(output_folder, "test_description.pth"))
             if self.cfg.MODEL.RELATION_ON:
                 torch.save(predictions_pred, os.path.join(output_folder, "predictions_pred.pth"))
 
-        extra_args = dict(
-            box_only=False if self.cfg.MODEL.RETINANET_ON else self.cfg.MODEL.RPN_ONLY,
-            iou_types=("bbox",),
-            expected_results=self.cfg.TEST.EXPECTED_RESULTS,
-            expected_results_sigma_tol=self.cfg.TEST.EXPECTED_RESULTS_SIGMA_TOL,
-        )
-        eval_det_results = evaluate(dataset=self.data_loader_test.dataset,
-                        predictions=predictions,
-                        output_folder=output_folder,
-                        **extra_args)
+        if not self.cfg.TEST.INFERENCE_NO_EVAL:
+            extra_args = dict(
+                box_only=False if self.cfg.MODEL.RETINANET_ON else self.cfg.MODEL.RPN_ONLY,
+                iou_types=("bbox",),
+                expected_results=self.cfg.TEST.EXPECTED_RESULTS,
+                expected_results_sigma_tol=self.cfg.TEST.EXPECTED_RESULTS_SIGMA_TOL,
+            )
+            eval_det_results = evaluate(dataset=self.data_loader_test.dataset,
+                                        predictions=predictions,
+                                        output_folder=output_folder,
+                                        **extra_args)
 
-        if self.cfg.MODEL.RELATION_ON:
-            eval_sg_results = evaluate_sg(dataset=self.data_loader_test.dataset,
-                            predictions=predictions,
-                            predictions_pred=predictions_pred,
-                            output_folder=output_folder,
-                            **extra_args)
+            if self.cfg.MODEL.RELATION_ON:
+                eval_sg_results = evaluate_sg(dataset=self.data_loader_test.dataset,
+                                              predictions=predictions,
+                                              predictions_pred=predictions_pred,
+                                              output_folder=output_folder,
+                                              **extra_args)
+
+class DataDescription:
+    def __init__(self, **kwargs):
+        self.description = {}
+        for k,v in kwargs.items():
+            self.description[k] = v
 
 def build_model(cfg, arguments, local_rank, distributed):
     return SceneGraphGeneration(cfg, arguments, local_rank, distributed)

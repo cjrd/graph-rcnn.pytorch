@@ -53,9 +53,10 @@ def make_batch_data_sampler(
         )
     return batch_sampler
 
-def build_data_loader(cfg, split="train", num_im=-1, is_distributed=False, start_iter=0):
+def build_data_loader(cfg, split="train", is_distributed=False, start_iter=0):
     num_gpus = get_world_size()
-    if cfg.DATASET.NAME == "vg" and cfg.DATASET.MODE == "benchmark":
+    num_im = cfg.DATASET.NUM_TRAIN_IMAGES if split=="train" else cfg.DATASET.NUM_TEST_IMAGES
+    if (cfg.DATASET.NAME == "vg" or cfg.DATASET.NAME == "coco") and cfg.DATASET.MODE == "benchmark":
         transforms = build_transforms(cfg, is_train=True if split=="train" else False)
         dataset = vg_hdf5(cfg, split=split, transforms=transforms, num_im=num_im)
         sampler = make_data_sampler(dataset, True if split == "train" else False, is_distributed)

@@ -56,7 +56,6 @@ def do_sg_evaluation(dataset, predictions, predictions_pred, output_folder, logg
                 gt_entry,
                 pred_entry,
             )
-
             evaluate(gt_boxlist.get_field("labels"), gt_boxlist.bbox, gt_boxlist.get_field("pred_labels"),
                     prediction.bbox, prediction.get_field("scores"), prediction.get_field("labels"),
                     prediction_pred.get_field("idx_pairs"), prediction_pred.get_field("scores"),

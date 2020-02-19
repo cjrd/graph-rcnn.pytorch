@@ -20,7 +20,7 @@
       * 'labels' object labels. the numbers here correspond labels in `results/test_description.pth` (Colorado made this change)
       * 'scores' score for object label
       * 'logits': the logit scores for each output
-      * 'features': the cnn featues ??
+      * 'features': pooled feature vector for the individual object
 
 * `predictions_pred.pth`: an array that contains predicate predictions for each image
     * List of BoxPairList, see `lib/scene_parser/rcnn/structures/bounding_box_pair.py`
@@ -64,7 +64,6 @@
 * `proposals.h5`
   * ['im_scales', 'im_to_roi_idx', 'num_rois', 'rpn_rois', 'rpn_scores']
 
-
 # Testing on new image datasets
 
 ## What you need to get started
@@ -87,4 +86,8 @@ We're going to be shimming the data processing into the instructions here: https
 Currently an example with the coco dataset:
 1. python vg_to_imdb.py --image_dir 'coco/val2017' --imh5_dir 'cocoout' --num_workers 40 --metadata_input 'coco-val-meta.json'
 
-1. 
+# Misc notes
+
+* MSDN: Multi-level Scene Description Network is an alternative scene graph generation model, see here: https://github.com/yikang-li/MSDN
+* FactorizableNet has comparable code in terms of library state: https://github.com/yikang-li/FactorizableNet (this is the evolution of MSDN)
+

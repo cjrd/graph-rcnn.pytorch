@@ -1,11 +1,10 @@
 import os
-import datetime
 import logging
 import time
 import numpy as np
 import torch
 import cv2
-from datetime import datetime
+import datetime
 from .data.build import build_data_loader
 from .scene_parser.parser import build_scene_parser
 from .scene_parser.parser import build_scene_parser_optimizer
@@ -15,6 +14,12 @@ from .scene_parser.rcnn.utils.comm import synchronize, all_gather, is_main_proce
 from .scene_parser.rcnn.utils.visualize import select_top_predictions, overlay_boxes, overlay_class_names
 from .data.evaluation import evaluate, evaluate_sg
 from .utils.box import bbox_overlaps
+
+timestr = time.strftime("%Y%m%d-%H%M%S")
+
+import wandb
+wandb.init(project="graph-rcnn")
+
 
 class SceneGraphGeneration:
     """
@@ -42,7 +47,6 @@ class SceneGraphGeneration:
         logger.info("Test data size: {}".format(len(self.data_loader_test.dataset)))
 
 
-        # TODO(cjrd) investigate this computation
         if not os.path.exists("freq_prior.npy"):
             logger.info("Computing frequency prior matrix...")
             fg_matrix, bg_matrix = self._get_freq_prior()
@@ -55,7 +59,10 @@ class SceneGraphGeneration:
             np.save("freq_prior.npy", prob_matrix)
 
         # build scene graph generation model
-        self.scene_parser = build_scene_parser(cfg); self.scene_parser.to(self.device)
+        self.scene_parser = build_scene_parser(cfg);
+        self.scene_parser.to(self.device)
+        # wandb.watch(self.scene_parser, log='all')
+        
         self.sp_optimizer, self.sp_scheduler, self.sp_checkpointer, self.extra_checkpoint_data = \
             build_scene_parser_optimizer(cfg, self.scene_parser, local_rank=local_rank, distributed=distributed)
 
@@ -172,6 +179,13 @@ class SceneGraphGeneration:
                         memory=torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
                     )
                 )
+                wandb.log(loss_dict_reduced)
+                wandb.log({
+                    "iter": i,
+                    "lr": self.sp_optimizer.param_groups[0]["lr"],
+                    "memory": torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
+                    "loss": losses_reduced,
+                })
             if (i + 1) % self.cfg.SOLVER.CHECKPOINT_PERIOD == 0:
                 self.sp_checkpointer.save("checkpoint_{:07d}".format(i), **self.arguments)
             if (i + 1) == max_iter:
@@ -259,6 +273,16 @@ class SceneGraphGeneration:
                 )
             if self.cfg.instance > 0 and i > self.cfg.instance:
                 break
+
+        # OOM issues below here!
+        # so we're going to write the dictionaries to file here, for now
+        output_folder = "results"
+        if not os.path.exists(output_folder):
+            os.mkdir(output_folder)
+        torch.save(results_dict, os.path.join(output_folder, "results_dict_{}_{}.pth".format(torch.cuda.current_device(), timestr)))
+        if self.cfg.MODEL.RELATION_ON:
+            torch.save(results_pred_dict, os.path.join(output_folder, "results_pred_dict_{}_{}.pth".format(torch.cuda.current_device(), timestr)))
+
         synchronize()
         total_time = total_timer.toc()
         total_time_str = get_time_str(total_time)
@@ -275,7 +299,9 @@ class SceneGraphGeneration:
                 inference_timer.total_time * num_devices / len(self.data_loader_test.dataset),
                 num_devices,
             )
-        )
+        )        
+        
+        
         predictions = self._accumulate_predictions_from_multiple_gpus(results_dict)
         if self.cfg.MODEL.RELATION_ON:
             predictions_pred = self._accumulate_predictions_from_multiple_gpus(results_pred_dict)
@@ -288,7 +314,7 @@ class SceneGraphGeneration:
                 os.mkdir(output_folder)
             torch.save(predictions, os.path.join(output_folder, "predictions.pth"))
             test_description = DataDescription(
-                date=datetime.now(),
+                date=datetime.datetime.now(),
                 class_to_ind=self.data_loader_test.dataset.class_to_ind,
                 ind_to_classes=self.data_loader_test.dataset.ind_to_classes,
                 ind_to_predicates=self.data_loader_test.dataset.ind_to_predicates,
@@ -308,16 +334,16 @@ class SceneGraphGeneration:
                 expected_results_sigma_tol=self.cfg.TEST.EXPECTED_RESULTS_SIGMA_TOL,
             )
             eval_det_results = evaluate(dataset=self.data_loader_test.dataset,
-                                        predictions=predictions,
-                                        output_folder=output_folder,
-                                        **extra_args)
+                        predictions=predictions,
+                        output_folder=output_folder,
+                        **extra_args)
 
             if self.cfg.MODEL.RELATION_ON:
                 eval_sg_results = evaluate_sg(dataset=self.data_loader_test.dataset,
-                                              predictions=predictions,
-                                              predictions_pred=predictions_pred,
-                                              output_folder=output_folder,
-                                              **extra_args)
+                                predictions=predictions,
+                                predictions_pred=predictions_pred,
+                                output_folder=output_folder,
+                                **extra_args)
 
 class DataDescription:
     def __init__(self, **kwargs):

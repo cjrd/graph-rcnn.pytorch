@@ -21,7 +21,6 @@ class SceneParser(GeneralizedRCNN):
     def __init__(self, cfg):
         GeneralizedRCNN.__init__(self, cfg)
         self.cfg = cfg
-
         self.rel_heads = None
         if cfg.MODEL.RELATION_ON and self.cfg.MODEL.ALGORITHM in SCENE_PAESER_DICT:
             self.rel_heads = build_roi_relation_head(cfg, self.backbone.out_channels)

@@ -72,8 +72,7 @@ class GRCNN(nn.Module):
 
         return rel_inds, obj_obj_map, subj_pred_map, obj_pred_map
 
-    def forward(self, features, proposals, proposal_pairs):
-        rel_inds, obj_obj_map, subj_pred_map, obj_pred_map = self._get_map_idxs(proposals, proposal_pairs)
+    def get_transformed_features(self, features, proposals, proposal_pairs):
         x_obj = torch.cat([proposal.get_field("features").detach() for proposal in proposals], 0)
         obj_class_logits = torch.cat([proposal.get_field("logits").detach() for proposal in proposals], 0)
         # x_obj = self.avgpool(self.obj_feature_extractor(features, proposals))
@@ -82,10 +81,14 @@ class GRCNN(nn.Module):
         x_obj = x_obj.view(x_obj.size(0), -1); x_obj = self.obj_embedding(x_obj)
         x_pred = x_pred.view(x_pred.size(0), -1); x_pred = self.rel_embedding(x_pred)
 
+        return [x_obj], [x_pred]
+        
+    def forward(self, features, proposals, proposal_pairs):
+        rel_inds, obj_obj_map, subj_pred_map, obj_pred_map = self._get_map_idxs(proposals, proposal_pairs)
         '''feature level agcn'''
-        obj_feats = [x_obj]
-        pred_feats = [x_pred]
+        obj_feats, pred_feats = self.get_transformed_features(features, proposals, proposal_pairs)
 
+        # TODO(cjrd) the features you're looking for are used here
         for t in range(self.feat_update_step):
             # message from other objects
             source_obj = self.gcn_collect_feat(obj_feats[t], obj_feats[t], obj_obj_map, 4)
@@ -102,6 +105,7 @@ class GRCNN(nn.Module):
             pred_feats.append(self.gcn_update_feat(pred_feats[t], source2rel_all, 1))
 
 
+        # TODO(cjrd) the features you're looking for are used here
         obj_class_logits = self.obj_predictor(obj_feats[-1].unsqueeze(2).unsqueeze(3))
         pred_class_logits = self.pred_predictor(pred_feats[-1].unsqueeze(2).unsqueeze(3))
 
@@ -135,7 +139,7 @@ class GRCNN(nn.Module):
         else:
             obj_class_labels = obj_class_logits[:, 1:].max(1)[1] + 1
 
-        return (x_pred), obj_class_logits, pred_class_logits, obj_class_labels, rel_inds
+        return (pred_feats[0]), obj_class_logits, pred_class_logits, obj_class_labels, rel_inds
 
 def build_grcnn_model(cfg, in_channels):
     return GRCNN(cfg, in_channels)

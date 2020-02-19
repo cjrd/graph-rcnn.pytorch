@@ -3,6 +3,7 @@
 # Written by Jianwei Yang (jw2yang@gatech.edu).
 import numpy as np
 import torch
+import h5py
 from torch import nn
 from lib.scene_parser.rcnn.structures.bounding_box_pair import BoxPairList
 from lib.scene_parser.rcnn.structures.boxlist_ops import boxlist_iou
@@ -26,7 +27,7 @@ class ROIRelationHead(torch.nn.Module):
     def __init__(self, cfg, in_channels):
         super(ROIRelationHead, self).__init__()
         self.cfg = cfg
-
+        print("Using algorithm", cfg.MODEL.ALGORITHM)
         if cfg.MODEL.ALGORITHM == "sg_baseline":
             self.rel_predictor = build_baseline_model(cfg, in_channels)
         elif cfg.MODEL.ALGORITHM == "sg_imp":
@@ -60,6 +61,8 @@ class ROIRelationHead(torch.nn.Module):
                 self.freq_dist = np.log(self.freq_dist + 1e-3)
                 self.freq_bias = FrequencyBias(self.freq_dist)
 
+        
+        
         # if self.cfg.MODEL.USE_FREQ_PRIOR:
         #     self.freq_dist = torch.from_numpy(np.load("freq_prior.npy"))
         #     self.freq_dist[:, :, 0] = 0
@@ -137,7 +140,8 @@ class ROIRelationHead(torch.nn.Module):
             # feature_extractor generally corresponds to the pooler + heads
             x, obj_class_logits, pred_class_logits, obj_class_labels, rel_inds = \
                 self.rel_predictor(features, proposals, proposal_pairs)
-
+            # TODO(cjrd) each image hits this state -- we'll extract the features somewhere in here
+            # import ipdb; ipdb.set_trace()
             if self.use_bias:
                 pred_class_logits = pred_class_logits + self.freq_bias.index_with_labels(
                     torch.stack((
@@ -146,21 +150,24 @@ class ROIRelationHead(torch.nn.Module):
                     ), 1))
 
         if not self.training:
-            # NOTE: if we have updated object class logits, then we need to update proposals as well!!!
-            # if obj_class_logits is not None:
-            #     boxes_per_image = [len(proposal) for proposal in proposals]
-            #     obj_logits = obj_class_logits
-            #     obj_scores, obj_labels = obj_class_logits[:, 1:].max(1)
-            #     obj_labels = obj_labels + 1
-            #     obj_logits = obj_logits.split(boxes_per_image, dim=0)
-            #     obj_scores = obj_scores.split(boxes_per_image, dim=0)
-            #     obj_labels = obj_labels.split(boxes_per_image, dim=0)
-            #     for proposal, obj_logit, obj_score, obj_label in \
-            #         zip(proposals, obj_logits, obj_scores, obj_labels):
-            #         proposal.add_field("logits", obj_logit)
-            #         proposal.add_field("scores", obj_score)
-            #         proposal.add_field("labels", obj_label)
             result = self.post_processor((pred_class_logits), proposal_pairs, use_freq_prior=self.cfg.MODEL.USE_FREQ_PRIOR)
+            
+            # ---------------------------------- COLO ADD - extract features for downstream applications (from grcnn.py) ------------------#
+            if self.cfg.TEST.SAVE_INTERMEDIATE_FEATURES:
+                try:
+                    obj_feats, pred_feats = self.rel_predictor.get_transformed_features(features, proposals, proposal_pairs)
+                    top_idxs = pred_class_logits.max(1)[0]
+                    if top_idxs.numel() >= self.cfg.TEST.INTERMEDIATE_FEATURES_TOPK_RELS:
+                        top_rels_idx = top_idxs.topk(self.cfg.TEST.INTERMEDIATE_FEATURES_TOPK_RELS)[1]
+                        top_rel_feats = pred_feats[0][top_rels_idx,:]
+                        result[0].add_field("top_rel_feats", top_rel_feats)
+                except Exception as e:
+                    print("Error determining intermediate features: {}".format(e))
+
+            #------------------------------------------------------------------------------------------------------------------------------#
+
+            # TODO investiate this model structure
+            # import ipdb; ipdb.set_trace()
 
             # if self.cfg.MODEL.USE_RELPN:
             #     for res, relness in zip(result, relnesses):

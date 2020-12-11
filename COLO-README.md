@@ -1,4 +1,3 @@
-
 # Important information
 
 * Description info (object counts and classes) for visual genome scene graphs: `datasets/vg_bm/VG-SGG-dicts.jsondatasets/vg_bm/VG-SGG-dicts.json`
